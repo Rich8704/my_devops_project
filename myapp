@@ -1,0 +1,144 @@
+const express = require('express');
+const mysql = require('mysql2');
+const bodyParser = require('body-parser');
+const multer = require('multer');
+const AWS = require('aws-sdk');
+const fs = require('fs');
+
+const app = express();
+const PORT = 3000;
+
+// Middleware
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// MySQL Connection
+const db = mysql.createConnection({
+  host: 'localhost',
+  user: 'devuser',
+  password: 'password123',
+  database: 'devops_project'
+});
+
+// Connect DB
+db.connect((err) => {
+  if (err) {
+    console.error("DB Connection Failed ❌", err);
+  } else {
+    console.log("Connected to MySQL ✅");
+  }
+});
+
+// Multer setup
+const upload = multer({ dest: 'uploads/' });
+
+// AWS S3 Config (⚠️ PUT YOUR KEYS HERE)
+const s3 = new AWS.S3({
+  accessKeyId: 'YOUR_ACCESS_KEY',
+  secretAccessKey: 'YOUR_SECRET_KEY',
+  region: 'us-east-1'
+});
+
+// Home Page
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>My DevOps Project 🚀</h1>
+
+    <h2>Signup</h2>
+    <form action="/signup" method="POST">
+      <input name="username" placeholder="Username" required/><br/><br/>
+      <input name="email" type="email" placeholder="Email" required/><br/><br/>
+      <input name="password" type="password" placeholder="Password" required/><br/><br/>
+      <button type="submit">Signup</button>
+    </form>
+
+    <hr/>
+
+    <h2>Login</h2>
+    <form action="/login" method="POST">
+      <input name="email" type="email" placeholder="Email" required/><br/><br/>
+      <input name="password" type="password" placeholder="Password" required/><br/><br/>
+      <button type="submit">Login</button>
+    </form>
+
+    <hr/>
+
+    <h2>Upload File</h2>
+    <form action="/upload" method="POST" enctype="multipart/form-data">
+      <input type="file" name="file" required/><br/><br/>
+      <button type="submit">Upload</button>
+    </form>
+  `);
+});
+
+// Signup Route
+app.post('/signup', (req, res) => {
+  const { username, email, password } = req.body;
+
+  db.query(
+    'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
+    [username, email, password],
+    (err) => {
+      if (err) {
+        console.error(err);
+        res.send("Signup Failed ❌");
+      } else {
+        res.send("User Registered ✅ <br><a href='/'>Go Back</a>");
+      }
+    }
+  );
+});
+
+// Login Route
+app.post('/login', (req, res) => {
+  const { email, password } = req.body;
+
+  db.query(
+    'SELECT * FROM users WHERE email = ? AND password = ?',
+    [email, password],
+    (err, results) => {
+      if (err) {
+        console.error(err);
+        res.send("Login Error ❌");
+      } else {
+        if (results.length > 0) {
+          res.send(`
+            <h2>Login Successful ✅</h2>
+            <p>Welcome, ${results[0].username} 👋</p>
+            <a href="/">Logout</a>
+          `);
+        } else {
+          res.send("Invalid Credentials ❌ <br><a href='/'>Try Again</a>");
+        }
+      }
+    }
+  );
+});
+
+// Upload Route (S3)
+app.post('/upload', upload.single('file'), (req, res) => {
+  const fileContent = fs.readFileSync(req.file.path);
+
+  const params = {
+    Bucket: 'devops-project-bucket-123', // your bucket name
+    Key: req.file.originalname,
+    Body: fileContent
+  };
+
+  s3.upload(params, (err, data) => {
+    if (err) {
+      console.error(err);
+      res.send("Upload Failed ❌");
+    } else {
+      res.send(`
+        File Uploaded Successfully ✅ <br>
+        <a href="${data.Location}" target="_blank">View File</a><br><br>
+        <a href="/">Go Back</a>
+      `);
+    }
+  });
+});
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT} 🚀`);
+});
